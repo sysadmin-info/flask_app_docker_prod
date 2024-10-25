@@ -1,0 +1,83 @@
+---
+- name: Setup Flask App with MySQL in Docker on Localhost
+  hosts: localhost
+  become: yes
+
+  tasks:
+    - name: Update the apt package index
+      apt:
+        update_cache: yes
+
+    - name: Install prerequisites for Docker
+      apt:
+        name: "{{ item }}"
+        state: present
+      loop:
+        - ca-certificates
+        - curl
+        - gnupg
+        - lsb-release
+
+    - name: Add Docker’s official GPG key
+      ansible.builtin.shell: |
+        curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo apt-key add -
+
+    - name: Add Docker repository
+      ansible.builtin.shell: |
+        echo "deb [arch=$(dpkg --print-architecture)] https://download.docker.com/linux/debian $(lsb_release -cs) stable" | tee /etc/apt/sources.list.d/docker.list
+
+    - name: Copy trusted GPG key
+      ansible.builtin.command:
+        cmd: cp /etc/apt/trusted.gpg /etc/apt/trusted.gpg.d
+
+    - name: Update apt package index after adding Docker repository
+      apt:
+        update_cache: yes
+
+    - name: Install Docker Engine and Docker Compose
+      apt:
+        name: "{{ item }}"
+        state: present
+      loop:
+        - docker-ce
+        - docker-ce-cli
+        - containerd.io
+        - docker-buildx-plugin
+        - docker-compose-plugin
+
+    - name: Ensure Docker service is started
+      service:
+        name: docker
+        state: started
+        enabled: yes
+
+    # Application Deployment Tasks
+    - name: Build Docker Image manually using command
+      ansible.builtin.command:
+        cmd: docker build -t my_flask_mysql_image .
+      register: build_result
+      changed_when: "'Successfully built' in build_result.stdout"
+
+    - name: Debug the build result
+      ansible.builtin.debug:
+        var: build_result
+
+    - name: Run Docker Container with Flask and MySQL
+      community.docker.docker_container:
+        name: my_flask_mysql_container
+        image: my_flask_mysql_image
+        ports:
+          - "2222:22"   # SSH port
+          - "5000:5000" # Flask port
+        state: started
+        restart_policy: unless-stopped
+        env:
+          MYSQL_DATABASE_HOST: "127.0.0.1"
+          MYSQL_DATABASE_USER: "db_user"
+          MYSQL_DATABASE_PASSWORD: "Passw0rd"
+          MYSQL_DATABASE_DB: "employee_db"
+      register: container_result
+
+    - name: Debug the container result
+      ansible.builtin.debug:
+        var: container_result
